@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Scanner</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 20px;
+            background-color: #f4f4f4;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 5px;
+            margin: 10px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #preview, #processed {
+            margin-top: 20px;
+            max-width: 100%;
+            border: 2px solid #ddd;
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+        }
+        #documents {
+            margin-top: 20px;
+            text-align: left;
+            display: inline-block;
+        }
+        .document-item {
+            margin: 5px 0;
+        }
+        #esp32-ip {
+            width: 200px;
+            margin: 10px;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Document Scanner</h1>
+
+    <!-- File Upload -->
+    <input type="file" id="fileInput" accept="image/*">
+    <button onclick="uploadImage()">Upload & Scan</button>
+
+    <!-- Webcam Capture -->
+    <br>
+    <video id="webcamVideo" width="400" height="300" autoplay></video>
+    <button onclick="captureWebcamImage()">Capture & Scan (Webcam)</button>
+    <canvas id="webcamCanvas" style="display: none;"></canvas>
+
+    <!-- ESP32-CAM Capture -->
+    <br>
+    <input type="text" id="esp32-ip" placeholder="ESP32-CAM IP Address">
+    <button onclick="captureEspImage()">Capture & Scan (ESP32-CAM)</button>
+
+    <!-- Uploaded & Processed Images -->
+    <h2>Uploaded Image</h2>
+    <img id="preview" src="" alt="Preview">
+    <h2>Processed Image</h2>
+    <img id="processed" src="" alt="Processed Image">
+
+    <!-- Scanned Documents List -->
+    <h2>Scanned Documents</h2>
+    <div id="documents"></div>
+
+    <script>
+        function uploadImage() {
+            let fileInput = document.getElementById("fileInput");
+            if (fileInput.files.length === 0) {
+                alert("Please select an image.");
+                return;
+            }
+
+            let file = fileInput.files[0];
+            let reader = new FileReader();
+
+            reader.onload = function(e) {
+                document.getElementById("preview").src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+
+            let formData = new FormData();
+            formData.append("image", file);
+            processImage(formData);
+        }
+
+        function captureWebcamImage() {
+            let video = document.getElementById("webcamVideo");
+            let canvas = document.getElementById("webcamCanvas");
+            let context = canvas.getContext("2d");
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            let imageDataURL = canvas.toDataURL("image/jpeg");
+            document.getElementById("preview").src = imageDataURL;
+
+            canvas.toBlob(blob => {
+                let formData = new FormData();
+                formData.append("image", blob, "webcam_capture.jpg");
+                processImage(formData);
+            }, "image/jpeg");
+        }
+
+        function captureEspImage() {
+            let espIpAddress = document.getElementById("esp32-ip").value;
+            if (!espIpAddress) {
+                alert("Please enter ESP32-CAM IP address");
+                return;
+            }
+        
+            let esp32Url = `http://${espIpAddress}/capture`;
+            
+            fetch(esp32Url, {
+                method: 'GET',
+                mode: 'cors', // Add this line
+                headers: {
+                    'Content-Type': 'image/jpeg',
+                    // Add any additional headers if needed
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.blob();
+            })
+            .then(blob => {
+                let imgUrl = URL.createObjectURL(blob);
+                document.getElementById("preview").src = imgUrl;
+            
+                let formData = new FormData();
+                formData.append("image", blob, "esp32_capture.jpg");
+            
+                processImage(formData);
+            })
+            .catch(error => {
+                console.error("Error capturing image from ESP32-CAM:", error);
+                alert("Failed to capture image. Error: " + error.message);
+            });
+        }
+
+        function processImage(formData) {
+            $.ajax({
+                url: "/scan",
+                type: "POST",
+                data: formData,
+                contentType: false,
+                processData: false,
+                success: function(response) {
+                    if (response.message) {
+                        alert("Processing complete! Fetching latest document...");
+                        fetchDocuments();
+                    } else {
+                        alert("Processing failed.");
+                    }
+                }
+            });
+        }
+
+        function fetchDocuments() {
+            $.ajax({
+                url: "/documents",
+                type: "GET",
+                success: function(response) {
+                    let docContainer = $("#documents");
+                    docContainer.html("");
+
+                    response.forEach(doc => {
+                        let docItem = `
+                            <div class="document-item">
+                                📄 <strong>${doc.filename}</strong>
+                                <button onclick="viewDocument(${doc.id})">View</button>
+                                <button onclick="downloadDocument(${doc.id})">Download</button>
+                            </div>
+                        `;
+                        docContainer.append(docItem);
+                    });
+
+                    if (response.length > 0) {
+                        viewDocument(response[response.length - 1].id);
+                    }
+                }
+            });
+        }
+
+        function viewDocument(docId) {
+            let processedImg = document.getElementById("processed");
+            processedImg.src = `/document/${docId}`;
+        }
+
+        function downloadDocument(docId) {
+            window.location.href = `/document/${docId}`;
+        }
+
+        // Load webcam
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                document.getElementById("webcamVideo").srcObject = stream;
+            })
+            .catch(err => {
+                console.error("Error accessing webcam: ", err);
+            });
+
+        // Load existing documents on page load
+        fetchDocuments();
+    </script>
+</body>
+</html>
