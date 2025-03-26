@@ -8,10 +8,10 @@ import io
 from flask_cors import CORS
 
 # Initialize SAP HANA connection
-HANA_HOST = "d0afe0ae-62c8-40ef-a998-b83ca6c5f30e.hana.trial-us10.hanacloud.ondemand.com"
+HANA_HOST = "YOUR_SQL_ENDPOINT"
 HANA_PORT = 443
-HANA_USER = "DBADMIN"  # Replace with your actual DB user
-HANA_PASSWORD = "Apakde@sap03"  # Replace with your actual password
+HANA_USER = "YOUR_SQL_USERNAME"  # Replace with your actual DB user
+HANA_PASSWORD = "YOUR_SQL_PASSWORD"  # Replace with your actual password
 
 # Establish connection
 conn = hdbcli.dbapi.connect(
